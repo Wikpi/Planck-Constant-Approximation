@@ -88,23 +88,32 @@ def solveUncertainty(xValues: NDArray, yValues: NDArray, error) -> float:
 def findMinLambda(angles: NDArray, intensity: NDArray) -> (int, float):
     """`findMinLambda` finds the start of the brehmsstrahlung continuum i.e. the highest energy lambda"""
     
-    # Factor by which we determine that the value is high enough for the continuum start i.e OUR rule
-    continuumFactor: float = 4.5
     # Background value avreage that we determine to be unncecessary
-    backgroundAverage: float = 10
+    backgroundAverage: float = 4.5
+
+    # Standard deviation of the first 10 angle intensities in the sample
+    std: float = np.std(intensity[:10])
+    
+    mean: float = np.mean(intensity[:10])
+
+    # Factor
+    continuumFactor: float = 3
+
+    # The min value that the algorithm should accept as the start of the continuum start
+    continuumMinValue = std * continuumFactor
 
     # Range over all angles
     for idx, angle in enumerate(angles):
         # Reject low values
-        # if intensity[idx - 1] * continuumFactor >= intensity[idx]:
-        #     continue
+        if np.fabs(intensity[idx - 1] - intensity[idx - 2]) < continuumMinValue and idx != 0:
+            continue
 
         # Reject background same ish values
         if intensity[idx] <= backgroundAverage:
             continue
 
         return idx, wavelength(angle)
-
+    
     return 0, 0
 
 # Compute wavelength specific uncertainty.
@@ -127,7 +136,7 @@ def computePlanckParameters(samples: list[str]) -> (NDArray, NDArray, NDArray):
     potentials: list[float] = []
     wavelengths: list[float] = []
     wavelengthUncertainties: list[float] = []
-    
+    idx = 0
     # Try all samples
     for sample in samples:
         # Get voltage from the saved filepath name i.e. data/some_data_35.xry -> voltage = 35
