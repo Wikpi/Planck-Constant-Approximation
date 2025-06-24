@@ -7,11 +7,16 @@ import scipy.constants as cst
 from scipy import odr
 
 # Measured data from the Laybold Didactic X-Ray apparatus
-dataPath35: str = "data/20250623_FinalMeas1_35kV_1mA.xry"
-dataPath33: str = "data/20250623_FinalMeas2_33kV_1mA.xry"
-dataPath31: str = "data/20250623_FinalMeas3_31kV_1mA.xry"
-dataPath29: str = "data/20250623_FinalMeas4_29kV_1mA.xry"
-dataPath27: str = "data/20250623_FinalMeas5_27kV_1mA.xry"
+dataPath35: str = "data/20250624_FinalMeas1_35kV_1mA.xry"
+dataPath34: str = "data/20250624_FinalMeas2_34kV_1mA.xry"
+dataPath33: str = "data/20250624_FinalMeas3_33kV_1mA.xry"
+dataPath32: str = "data/20250624_FinalMeas4_32kV_1mA.xry"
+dataPath31: str = "data/20250624_FinalMeas5_31kV_1mA.xry"
+dataPath30: str = "data/20250624_FinalMeas6_30kV_1mA.xry"
+dataPath29: str = "data/20250624_FinalMeas7_29kV_1mA.xry"
+dataPath28: str = "data/20250624_FinalMeas8_28kV_1mA.xry"
+dataPath27: str = "data/20250624_FinalMeas9_27kV_1mA.xry"
+dataPath26: str = "data/20250624_FinalMeas10_26kV_1mA.xry"
 
 thetaUncertainty: float = 0.05 # Technically 0.1, but halved is better theoretically
 potentialUncertainty: float = 50 # Technically 100, but halved is better theoretically
@@ -19,6 +24,9 @@ wavelengthUncertainty: float # Specific for each wavelength
 
 d: float = 283.6e-12 # 283.6 +- 3.9 pm -- specific for each target crystal
 dUncertainty: float = 3.9e-12
+
+# The inherent error in the Leybold Didactic apparatus
+systematicAngleError: float = 0.1
 
 # Custom import function
 def importData(filename):
@@ -83,13 +91,14 @@ def findMinLambda(angles: NDArray, intensity: NDArray) -> (int, float):
     # Factor by which we determine that the value is high enough for the continuum start i.e OUR rule
     continuumFactor: float = 4.5
     # Background value avreage that we determine to be unncecessary
-    backgroundAverage: float = 4
+    backgroundAverage: float = 10
 
     # Range over all angles
     for idx, angle in enumerate(angles):
         # Reject low values
-        if intensity[idx - 1] * continuumFactor >= intensity[idx]:
-            continue
+        # if intensity[idx - 1] * continuumFactor >= intensity[idx]:
+        #     continue
+
         # Reject background same ish values
         if intensity[idx] <= backgroundAverage:
             continue
@@ -130,8 +139,7 @@ def computePlanckParameters(samples: list[str]) -> (NDArray, NDArray, NDArray):
         xValues, yValues = importData(sample)
 
         # Systematic machine error
-        # potential += 100
-        # xValues += 0.15
+        xValues += systematicAngleError
 
         # Lambda min i.e. highest energy
         angleIdx, minLambda = findMinLambda(xValues, yValues)
@@ -148,7 +156,7 @@ def computePlanckParameters(samples: list[str]) -> (NDArray, NDArray, NDArray):
 # Main experiment entry point.
 def main() -> None:
     # All experiment samples
-    samples: list[str] = [dataPath35, dataPath33, dataPath31, dataPath29, dataPath27]
+    samples: list[str] = [dataPath35, dataPath34, dataPath33, dataPath32, dataPath31, dataPath30, dataPath29, dataPath28, dataPath27, dataPath26]
 
     # Planck parameters
     potentials, wavelengths, wavelengthUncertainties = computePlanckParameters(samples)
