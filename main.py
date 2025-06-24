@@ -130,8 +130,8 @@ def computePlanckParameters(samples: list[str]) -> (NDArray, NDArray, NDArray):
         xValues, yValues = importData(sample)
 
         # Systematic machine error
-        potential += 100
-        xValues += 0.15
+        # potential += 100
+        # xValues += 0.15
 
         # Lambda min i.e. highest energy
         angleIdx, minLambda = findMinLambda(xValues, yValues)
@@ -173,10 +173,13 @@ def main() -> None:
 
     plt.xlabel("Voltage 1/U (V)")
     plt.ylabel("Wavelength λ (m)")
-    plt.title("Fitting Planck's Constant")
+    plt.title("Fitting Planck's Constant (%d samples)" % len(samples))
     
     plt.grid(True)
     plt.legend()
+
+    plt.savefig("saved/%s" % "Fitting Planck's Constant (%d samples)" % len(samples))
+
     plt.show()
 
 main()
