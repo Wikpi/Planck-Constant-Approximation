@@ -5,6 +5,7 @@ from numpy.typing import NDArray
 from pathlib import Path
 import scipy.constants as cst
 from scipy import odr
+import scipy.signal as signal
 
 # Measured data from the Laybold Didactic X-Ray apparatus
 dataPath35: str = "data/20250624_FinalMeas1_35kV_1mA.xry"
@@ -20,7 +21,6 @@ dataPath26: str = "data/20250624_FinalMeas10_26kV_1mA.xry"
 
 thetaUncertainty: float = 0.05 # Technically 0.1, but halved is better theoretically
 potentialUncertainty: float = 50 # Technically 100, but halved is better theoretically
-wavelengthUncertainty: float # Specific for each wavelength
 
 d: float = 283.6e-12 # 283.6 +- 3.9 pm -- specific for each target crystal
 dUncertainty: float = 3.9e-12
@@ -58,7 +58,7 @@ def wavelength(angle: float) -> float:
     return 2 * d * np.sin(np.radians(angle))
 
 # Fits planck constant approximation.
-def solveUncertainty(xValues: NDArray, yValues: NDArray, error) -> float:
+def solveUncertainty(xValues: NDArray, yValues: NDArray, error: list) -> (float, float):
     """`solveUncertainty` fits the measured data to approximate planck constant slope."""
     
     # Slope Model
@@ -68,7 +68,7 @@ def solveUncertainty(xValues: NDArray, yValues: NDArray, error) -> float:
     initial = np.array([cst.Planck * cst.speed_of_light / cst.elementary_charge])
 
     # ODR models
-    data = odr.RealData(xValues, yValues, sx=potentialUncertainty, sy=error)
+    data = odr.RealData(xValues, yValues, sx=np.array(error[0]), sy=np.array(error[1]))
     model = odr.Model(model)
 
     odrSetup = odr.ODR(data, model, beta0=initial)
@@ -85,10 +85,18 @@ def solveUncertainty(xValues: NDArray, yValues: NDArray, error) -> float:
     return [output.beta * cst.elementary_charge / cst.speed_of_light, output.sd_beta * cst.elementary_charge / cst.speed_of_light]
 
 # Finds the start of the brehmsstrahlung continuum i.e. the highest energy lambda
-def findMinLambda(angles: NDArray, intensity: NDArray) -> (int, float):
+def findMinLambda(angles: NDArray, intensity: NDArray) -> float:
     """`findMinLambda` finds the start of the brehmsstrahlung continuum i.e. the highest energy lambda"""
     
-    # Background value avreage that we determine to be unncecessary
+    # Smoothing parameters
+    # n = len(intensity)
+    # window_length = min(9, n if n % 2 == 1 else n - 1) # Picking an odd large enough number to smooth out the noisiness
+    # polyorder = 2 if window_length > 2 else 1 # Cant be larger than the windoww length
+
+    # # Smooth measured intensity
+    # smoothed = signal.savgol_filter(intensity, window_length=window_length, polyorder=polyorder)
+
+    # # Background value avreage that we determine to be unncecessary
     backgroundAverage: float = 4.5
 
     # Standard deviation of the first 10 angle intensities in the sample
@@ -105,16 +113,19 @@ def findMinLambda(angles: NDArray, intensity: NDArray) -> (int, float):
     # Range over all angles
     for idx, angle in enumerate(angles):
         # Reject low values
-        if np.fabs(intensity[idx - 1] - intensity[idx - 2]) < continuumMinValue and idx != 0:
+        if intensity[idx - 1] - intensity[idx - 2] < continuumMinValue:
             continue
 
         # Reject background same ish values
         if intensity[idx] <= backgroundAverage:
             continue
 
-        return idx, wavelength(angle)
+        return wavelength(angle)
     
-    return 0, 0
+    return 0
+
+def findInversePotentialUncertainty(potential) -> float:
+    return np.fabs(1 / (potential + potentialUncertainty) - 1 / (potential - potentialUncertainty)) / 2
 
 # Compute wavelength specific uncertainty.
 def findWavelengthUncertainty(theta) -> float:
@@ -129,14 +140,13 @@ def findWavelengthUncertainty(theta) -> float:
     return uncertainty
 
 # Compute parameters fro planck graphing for all samples.
-def computePlanckParameters(samples: list[str]) -> (NDArray, NDArray, NDArray):
+def computePlanckParameters(samples: list[str]) -> (NDArray, NDArray):
     """`computePlanckParameters` finds all needed parameters to successfully plot the planck constant for all samples."""
     
     # Final return values
     potentials: list[float] = []
     wavelengths: list[float] = []
-    wavelengthUncertainties: list[float] = []
-    idx = 0
+
     # Try all samples
     for sample in samples:
         # Get voltage from the saved filepath name i.e. data/some_data_35.xry -> voltage = 35
@@ -151,16 +161,12 @@ def computePlanckParameters(samples: list[str]) -> (NDArray, NDArray, NDArray):
         xValues += systematicAngleError
 
         # Lambda min i.e. highest energy
-        angleIdx, minLambda = findMinLambda(xValues, yValues)
-        
-        # Specific lambda uncertainty
-        lambdaUncertainty = findWavelengthUncertainty(xValues[angleIdx])
+        minLambda = findMinLambda(xValues, yValues)
 
         potentials.append(potential)
         wavelengths.append(minLambda)
-        wavelengthUncertainties.append(lambdaUncertainty)
 
-    return np.array(potentials), np.array(wavelengths), np.array(wavelengthUncertainties)
+    return np.array(potentials), np.array(wavelengths)
 
 # Main experiment entry point.
 def main() -> None:
@@ -168,10 +174,18 @@ def main() -> None:
     samples: list[str] = [dataPath35, dataPath34, dataPath33, dataPath32, dataPath31, dataPath30, dataPath29, dataPath28, dataPath27, dataPath26]
 
     # Planck parameters
-    potentials, wavelengths, wavelengthUncertainties = computePlanckParameters(samples)
+    potentials, wavelengths = computePlanckParameters(samples)
+
+    potentialsError = []
+    for potential in potentials:
+        potentialsError.append(findInversePotentialUncertainty(potential))
+
+    waveLengthsError = []
+    for wavelength in wavelengths:
+        waveLengthsError.append(findWavelengthUncertainty(wavelength))
 
     # Fitted planck constant
-    planck, error = solveUncertainty(potentials, wavelengths, wavelengthUncertainties)
+    planck, error = solveUncertainty(potentials, wavelengths, [potentialsError, waveLengthsError])
 
     print("planck constant after odr: ", planck)
     print("planck constant error: ", error)
@@ -180,7 +194,7 @@ def main() -> None:
     potentials = 1.0 / potentials
 
     # All points of the measured data
-    plt.errorbar(potentials, wavelengths, yerr=wavelengthUncertainties, fmt="*", label='Measured', linewidth=2)
+    plt.errorbar(potentials, wavelengths, yerr=waveLengthsError, fmt="*", label='Measured', linewidth=2)
 
     # Actual planck constant slope
     plt.plot(potentials, (cst.Planck * cst.speed_of_light / cst.elementary_charge) * potentials, label='Expected (True h)', color='green', linestyle=':', linewidth=6)
